@@ -140,6 +140,41 @@ export const AgentThoughtDashboard: React.FC = () => {
 
   const activeTrace = traces.find((t) => t.id === selectedTraceId) || latestTraceForAsset;
 
+  // Normalized trace attributes across schemas
+  const details = activeTrace?.details || {};
+  const regime = details.regime || 'RANGE';
+  const sessionBias = details.bias || details.session_bias || 'NO_TRADE';
+  const biasConfidence = details.bias_confidence !== undefined ? details.bias_confidence : 0;
+
+  // Technical worker
+  const tech = details.technical || details.technical_analysis || {};
+  const techSetup = (tech.setup_type && tech.setup_type !== 'NONE') ? tech.setup_type : (tech.setup_candidate || 'NO_SETUP');
+  const techRsi = tech.rsi_14 !== undefined ? Number(tech.rsi_14).toFixed(1) : '50.0';
+  const techEma = tech.ema_fast ? `$${Math.round(tech.ema_fast)} / $${Math.round(tech.ema_slow)}` : 'Aligned';
+  const techVwap = tech.vwap ? `$${Number(tech.vwap).toFixed(1)}` : 'Neutral';
+  const techBreakout = tech.setup_detected || tech.breakout_detected || false;
+
+  // ML worker
+  const ml = details.ml || details.ml_prediction || {};
+  const mlDecision = ml.decision || ml.prediction || 'NO_TRADE';
+  const mlConfidence = ml.confidence !== undefined ? `${(Number(ml.confidence) * 100).toFixed(1)}%` : '0.0%';
+  const mlProbs = ml.probabilities || {};
+  const mlProbLong = mlProbs.LONG || 0;
+  const mlProbShort = mlProbs.SHORT || 0;
+  const mlProbNeutral = mlProbs.NEUTRAL || mlProbs.NO_TRADE || 0;
+
+  // Order flow worker
+  const of = details.order_flow || {};
+  const ofImbalance = of.imbalance !== undefined ? `${(Number(of.imbalance) * 100).toFixed(1)}%` : (of.bid_ask_imbalance !== undefined ? `${(Number(of.bid_ask_imbalance) * 100).toFixed(1)}%` : '0.0%');
+  const ofSpread = of.spread_bps !== undefined ? `${Number(of.spread_bps).toFixed(1)} bps` : '1.2 bps';
+  const ofStatus = of.status || 'AVAILABLE';
+
+  // Validator worker
+  const val = details.validation || {};
+  const validatorDecision = val.decision || details.validator_decision || (val.rationale ? 'REJECT' : 'NO_TRADE');
+  const proposalId = val.proposal?.id || details.proposal?.id || 'None';
+  const rationale = val.rationale || details.rationale || 'Session bias is NO_TRADE (gate locked). Preserving capital.';
+
   const openPositions = positions.filter((p) => p.status === 'OPEN');
   const closedPositions = positions.filter((p) => p.status === 'CLOSED');
 
@@ -340,19 +375,19 @@ export const AgentThoughtDashboard: React.FC = () => {
               <div className="flex items-center gap-1.5 text-slate-300">
                 <span className="text-slate-500">Market Regime:</span>
                 <span className="px-2 py-0.5 rounded bg-slate-800 text-indigo-300 border border-slate-700 uppercase">
-                  {activeTrace?.details?.regime || 'RANGE'}
+                  {regime}
                 </span>
               </div>
               <div className="flex items-center gap-1.5 text-slate-300">
                 <span className="text-slate-500">Session Bias:</span>
                 <span className={`px-2 py-0.5 rounded border uppercase font-bold ${
-                  activeTrace?.details?.session_bias === 'LONG_ONLY'
+                  sessionBias === 'LONG_ONLY'
                     ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                    : activeTrace?.details?.session_bias === 'SHORT_ONLY'
+                    : sessionBias === 'SHORT_ONLY'
                     ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
                     : 'bg-slate-800 text-slate-400 border-slate-700'
                 }`}>
-                  {activeTrace?.details?.session_bias || 'NO_TRADE'}
+                  {sessionBias}
                 </span>
               </div>
             </div>
@@ -375,37 +410,31 @@ export const AgentThoughtDashboard: React.FC = () => {
                   <div className="flex justify-between">
                     <span className="text-slate-400">Setup Pattern:</span>
                     <span className="font-mono font-semibold text-indigo-300">
-                      {activeTrace?.details?.technical_analysis?.setup_candidate || 'NO_SETUP'}
+                      {techSetup}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">RSI (14):</span>
                     <span className="font-mono text-slate-200">
-                      {activeTrace?.details?.technical_analysis?.rsi_14 !== undefined
-                        ? Number(activeTrace.details.technical_analysis.rsi_14).toFixed(1)
-                        : '50.0'}
+                      {techRsi}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">EMA Fast/Slow:</span>
                     <span className="font-mono text-slate-300">
-                      {activeTrace?.details?.technical_analysis?.ema_fast
-                        ? `$${Math.round(activeTrace.details.technical_analysis.ema_fast)} / $${Math.round(activeTrace.details.technical_analysis.ema_slow)}`
-                        : 'Aligned'}
+                      {techEma}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">VWAP Interaction:</span>
                     <span className="font-mono text-slate-300">
-                      {activeTrace?.details?.technical_analysis?.vwap
-                        ? `$${Number(activeTrace.details.technical_analysis.vwap).toFixed(1)}`
-                        : 'Neutral'}
+                      {techVwap}
                     </span>
                   </div>
                 </div>
               </div>
               <div className="mt-4 pt-2 border-t border-slate-800/60 text-[11px] text-slate-400">
-                Pattern Recognition: {activeTrace?.details?.technical_analysis?.breakout_detected ? 'Breakout Detected' : 'No Breakout'}
+                Pattern Recognition: {techBreakout ? 'Breakout Detected' : 'No Breakout'}
               </div>
             </div>
 
@@ -424,21 +453,19 @@ export const AgentThoughtDashboard: React.FC = () => {
                   <div className="flex justify-between">
                     <span className="text-slate-400">Direction:</span>
                     <span className={`font-mono font-bold ${
-                      activeTrace?.details?.ml_prediction?.prediction === 'LONG'
+                      mlDecision === 'LONG'
                         ? 'text-emerald-400'
-                        : activeTrace?.details?.ml_prediction?.prediction === 'SHORT'
+                        : mlDecision === 'SHORT'
                         ? 'text-rose-400'
                         : 'text-slate-400'
                     }`}>
-                      {activeTrace?.details?.ml_prediction?.prediction || 'NO_TRADE'}
+                      {mlDecision}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Calibrated Conf:</span>
                     <span className="font-mono text-slate-200">
-                      {activeTrace?.details?.ml_prediction?.confidence !== undefined
-                        ? `${(Number(activeTrace.details.ml_prediction.confidence) * 100).toFixed(1)}%`
-                        : '0.0%'}
+                      {mlConfidence}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -454,25 +481,25 @@ export const AgentThoughtDashboard: React.FC = () => {
                   <span className="text-[10px] text-slate-500 block mb-1">Class Probabilities:</span>
                   <div className="flex h-2 w-full rounded-full overflow-hidden bg-slate-800">
                     <div
-                      style={{ width: `${(activeTrace?.details?.ml_prediction?.probabilities?.LONG || 0.33) * 100}%` }}
+                      style={{ width: `${(mlProbLong || 0.33) * 100}%` }}
                       className="bg-emerald-500"
                       title="Long Prob"
                     />
                     <div
-                      style={{ width: `${(activeTrace?.details?.ml_prediction?.probabilities?.NO_TRADE || 0.34) * 100}%` }}
+                      style={{ width: `${(mlProbNeutral || 0.34) * 100}%` }}
                       className="bg-slate-600"
                       title="No Trade Prob"
                     />
                     <div
-                      style={{ width: `${(activeTrace?.details?.ml_prediction?.probabilities?.SHORT || 0.33) * 100}%` }}
+                      style={{ width: `${(mlProbShort || 0.33) * 100}%` }}
                       className="bg-rose-500"
                       title="Short Prob"
                     />
                   </div>
                   <div className="flex justify-between text-[9px] font-mono text-slate-400 mt-1">
-                    <span>L: {((activeTrace?.details?.ml_prediction?.probabilities?.LONG || 0) * 100).toFixed(0)}%</span>
-                    <span>N: {((activeTrace?.details?.ml_prediction?.probabilities?.NO_TRADE || 0) * 100).toFixed(0)}%</span>
-                    <span>S: {((activeTrace?.details?.ml_prediction?.probabilities?.SHORT || 0) * 100).toFixed(0)}%</span>
+                    <span>L: {(mlProbLong * 100).toFixed(0)}%</span>
+                    <span>N: {(mlProbNeutral * 100).toFixed(0)}%</span>
+                    <span>S: {(mlProbShort * 100).toFixed(0)}%</span>
                   </div>
                 </div>
               </div>
@@ -496,23 +523,19 @@ export const AgentThoughtDashboard: React.FC = () => {
                   <div className="flex justify-between">
                     <span className="text-slate-400">Imbalance:</span>
                     <span className="font-mono text-slate-200">
-                      {activeTrace?.details?.order_flow?.bid_ask_imbalance !== undefined
-                        ? `${(Number(activeTrace.details.order_flow.bid_ask_imbalance) * 100).toFixed(1)}%`
-                        : '0.0%'}
+                      {ofImbalance}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Bid/Ask Spread:</span>
                     <span className="font-mono text-slate-200">
-                      {activeTrace?.details?.order_flow?.spread_bps !== undefined
-                        ? `${Number(activeTrace.details.order_flow.spread_bps).toFixed(1)} bps`
-                        : '1.2 bps'}
+                      {ofSpread}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Data Freshness:</span>
                     <span className="font-mono text-emerald-400">
-                      {activeTrace?.details?.order_flow?.status || 'AVAILABLE'}
+                      {ofStatus}
                     </span>
                   </div>
                 </div>
@@ -537,19 +560,19 @@ export const AgentThoughtDashboard: React.FC = () => {
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400">Final Verdict:</span>
                     <span className={`px-2 py-0.5 rounded text-[11px] font-bold font-mono ${
-                      activeTrace?.details?.validator_decision === 'APPROVE'
+                      validatorDecision === 'APPROVE'
                         ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                        : activeTrace?.details?.validator_decision === 'REJECT'
+                        : validatorDecision === 'REJECT'
                         ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
                         : 'bg-slate-800 text-slate-300 border border-slate-700'
                     }`}>
-                      {activeTrace?.details?.validator_decision || 'NO_TRADE'}
+                      {validatorDecision}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-400">Proposal ID:</span>
                     <span className="font-mono text-slate-400 truncate max-w-[120px]">
-                      {activeTrace?.details?.proposal?.id || 'None'}
+                      {proposalId}
                     </span>
                   </div>
                 </div>
@@ -558,7 +581,7 @@ export const AgentThoughtDashboard: React.FC = () => {
                 <div className="mt-3 p-2.5 rounded-lg bg-slate-950/80 border border-slate-800 text-[11px] text-slate-300">
                   <span className="font-semibold text-slate-400 block mb-0.5 font-mono">Reasoning:</span>
                   <p className="line-clamp-3">
-                    {activeTrace?.details?.rationale || 'Session bias is NO_TRADE (gate locked). Preserving capital.'}
+                    {rationale}
                   </p>
                 </div>
               </div>
@@ -586,17 +609,17 @@ export const AgentThoughtDashboard: React.FC = () => {
               <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4">
                 <h4 className="text-xs font-mono font-semibold text-slate-400 mb-2 uppercase">1. Session Locks & State</h4>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  Supervisor established a <strong className="text-indigo-300">{activeTrace?.details?.session_bias || 'NO_TRADE'}</strong> session bias with {((activeTrace?.details?.bias_confidence || 0) * 100).toFixed(0)}% confidence.
-                  Market structure is currently classified under the <strong className="text-indigo-300">{activeTrace?.details?.regime || 'RANGE'}</strong> regime.
+                  Supervisor established a <strong className="text-indigo-300">{sessionBias}</strong> session bias with {((activeTrace?.details?.bias_confidence || 0) * 100).toFixed(0)}% confidence.
+                  Market structure is currently classified under the <strong className="text-indigo-300">{regime}</strong> regime.
                 </p>
               </div>
 
               <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4">
                 <h4 className="text-xs font-mono font-semibold text-slate-400 mb-2 uppercase">2. Worker Consensus</h4>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  Technical Agent detected setup: <span className="font-mono text-slate-200">{activeTrace?.details?.technical_analysis?.setup_candidate || 'NO_SETUP'}</span>.
-                  ML model gave prediction: <span className="font-mono text-slate-200">{activeTrace?.details?.ml_prediction?.prediction || 'NO_TRADE'}</span>.
-                  Validator synthesized all signals and returned: <strong className="text-amber-300">{activeTrace?.details?.validator_decision || 'NO_TRADE'}</strong>.
+                  Technical Agent detected setup: <span className="font-mono text-slate-200">{techSetup}</span>.
+                  ML model gave prediction: <span className="font-mono text-slate-200">{mlDecision}</span>.
+                  Validator synthesized all signals and returned: <strong className="text-amber-300">{validatorDecision}</strong>.
                 </p>
               </div>
 

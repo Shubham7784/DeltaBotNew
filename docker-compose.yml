@@ -1,0 +1,136 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: deltabot
+      POSTGRES_USER: deltabot
+      POSTGRES_PASSWORD: deltabot
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U deltabot -d deltabot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_HOST_PORT:-6380}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend_v2
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend_v2/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://deltabot:deltabot@postgres:5432/deltabot
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live')",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  market-stream:
+    build:
+      context: ./backend_v2
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend_v2/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://deltabot:deltabot@postgres:5432/deltabot
+      REDIS_URL: redis://redis:6379/0
+    command: ["python", "-m", "scripts.stream_market_data"]
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+  news-collector:
+    build:
+      context: ./backend_v2
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend_v2/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://deltabot:deltabot@postgres:5432/deltabot
+      REDIS_URL: redis://redis:6379/0
+    command: ["python", "-m", "scripts.collect_news"]
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+  news-sentiment:
+    build:
+      context: ./backend_v2
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend_v2/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://deltabot:deltabot@postgres:5432/deltabot
+      REDIS_URL: redis://redis:6379/0
+      NEWS_SENTIMENT_MODEL_CACHE: /model-cache
+    command: ["python", "-m", "scripts.classify_news"]
+    restart: unless-stopped
+    volumes:
+      - news_model_cache:/model-cache
+    depends_on:
+      api:
+        condition: service_healthy
+
+  paper-trader:
+    build:
+      context: ./backend_v2
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend_v2/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://deltabot:deltabot@postgres:5432/deltabot
+      REDIS_URL: redis://redis:6379/0
+      MONITOR_INTERVAL_SECONDS: "60"
+      TRADING_ASSETS: "BTC,ETH"
+    command: ["python", "-m", "scripts.daemon_paper_trader"]
+    restart: unless-stopped
+    volumes:
+      - ./backend_v2/model-registry:/app/model-registry
+    depends_on:
+      api:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontendV2
+      dockerfile: Dockerfile
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  news_model_cache:

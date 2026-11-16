@@ -110,6 +110,17 @@ services:
       api:
         condition: service_healthy
 
+  frontend:
+    build:
+      context: ../frontendV2
+      dockerfile: Dockerfile
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   news_model_cache:
