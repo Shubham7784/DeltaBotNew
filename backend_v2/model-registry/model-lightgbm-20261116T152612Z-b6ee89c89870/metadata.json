@@ -1,0 +1,59 @@
+{
+  "approved": true,
+  "approved_at": "2026-11-16T15:27:36.940489+00:00",
+  "approved_by": "senior_quant_lead",
+  "artifact_file": "model.joblib",
+  "artifact_sha256": "d4419aa4b6692ee59698ba9646d821cc2417babc2ebea44079848996a30a0d00",
+  "calibration_method": "sigmoid",
+  "dataset_version": "dataset-add2d4c10124c8e64dfc7ef2",
+  "description": "lightgbm trained on dataset-add2d4c10124c8e64dfc7ef2 with sigmoid calibration",
+  "evaluation_metrics": {
+    "calibration_method": "sigmoid",
+    "classification": {
+      "accuracy": 0.5812274368231047,
+      "brier_score": 0.48424971416549006,
+      "f1_macro": 0.417939868214028,
+      "log_loss": 0.6771798601407935,
+      "mcc": 0.06770331180150439
+    },
+    "confidence_threshold": 0.4,
+    "model_type": "lightgbm",
+    "passes_acceptance": false,
+    "trading": {
+      "max_drawdown_bps": 23386.36328614607,
+      "net_expectancy_bps": -11.616351677520676,
+      "net_pnl_bps": -22524.105902712592,
+      "profit_factor": 0.720263585626195,
+      "total_trades": 1939,
+      "win_rate": 0.5358432181536875
+    }
+  },
+  "feature_names": [
+    "close_price",
+    "return_1_period_pct",
+    "ema_8_21_spread_pct",
+    "close_vs_ema_21_pct",
+    "trend_consistency_12",
+    "return_4_period_pct",
+    "return_12_period_pct",
+    "rsi_14",
+    "realized_volatility_12_pct",
+    "realized_volatility_24_pct",
+    "atr_14_pct",
+    "current_volume",
+    "volume_sma_20",
+    "volume_ratio_20",
+    "volume_zscore_20",
+    "btc_return_1h_pct",
+    "eth_return_1h_pct",
+    "btc_minus_eth_return_1h_pct"
+  ],
+  "feature_schema_version": "candle-market-features-v1",
+  "hyperparameters": {
+    "model_type": "lightgbm",
+    "random_state": 42
+  },
+  "model_id": "model-lightgbm-20261116T152612Z-b6ee89c89870",
+  "model_type": "lightgbm",
+  "registered_at": "2026-11-16T15:26:12.567608+00:00"
+}
