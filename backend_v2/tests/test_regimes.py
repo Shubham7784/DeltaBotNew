@@ -90,3 +90,14 @@ def test_unavailable_for_stale_or_discontinuous_completed_candles() -> None:
     assert "gap" in gap_result.evidence[0]
     assert incomplete_latest_result.data_as_of == START + timedelta(hours=50)
 
+
+
+def test_classifies_directional_breakdown_momentum_with_high_volatility() -> None:
+    now = calculation_time(50)
+    # Steep steady decline: -1% every hour
+    steep_decline = [100.0 * (0.99**index) for index in range(50)]
+    result = classify_hourly_regime("BTC", make_candles(steep_decline), computed_at=now)
+
+    assert result.regime == "trend_down"
+    assert result.features.ema_spread_percent is not None and result.features.ema_spread_percent < 0
+    assert result.features.return_24h_percent is not None and result.features.return_24h_percent < 0

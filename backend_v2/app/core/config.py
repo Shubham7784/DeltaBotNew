@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     news_poll_interval_seconds: int = Field(default=300, ge=30, le=3_600)
     news_request_timeout_seconds: float = Field(default=15, gt=0, le=120)
     news_sentiment_model_cache: Path = Path(".model-cache")
+    telegram_bot_token: str = Field(default="", description="Telegram Bot API Token")
+    telegram_chat_id: str = Field(default="", description="Telegram Chat ID for notifications and overrides")
+    whatsapp_bridge_url: str = Field(default="http://whatsapp:3001", description="Internal URL to WhatsApp bridge")
+    whatsapp_target_number: str = Field(default="", description="WhatsApp target phone number with country code")
+    whatsapp_enabled: bool = Field(default=True, description="Enable WhatsApp alerts and overrides")
 
     @field_validator("delta_public_ws_url")
     @classmethod

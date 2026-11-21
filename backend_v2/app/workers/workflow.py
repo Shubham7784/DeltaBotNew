@@ -312,4 +312,8 @@ class AssetWorkflowCoordinator:
             "validator_decision": validator_output.payload.get("decision"),
             "rationale": validator_output.payload.get("rationale"),
             "proposal": validator_output.payload.get("proposal"),
+            "technical_payload": tech_output.payload,
+            "ml_payload": ml_output.payload,
+            "order_flow_payload": of_output.payload,
+            "validator_payload": validator_output.payload,
         }

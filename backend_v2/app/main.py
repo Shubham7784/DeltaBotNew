@@ -9,7 +9,9 @@ from app.api.routes.market import router as market_router
 from app.api.routes.news import router as news_router
 from app.api.routes.supervisor import router as supervisor_router
 from app.api.routes.system import router as system_router
+from app.api.routes.telegram import router as telegram_router
 from app.api.routes.trading import router as trading_router
+from app.api.routes.whatsapp import router as whatsapp_router
 from app.core.config import get_settings
 from app.database import close_database_resources, engine
 from app.market_data.delta_client import DeltaRestClient
@@ -45,11 +47,16 @@ app.add_middleware(
         "http://127.0.0.1:8000",
         "http://localhost",
         "http://127.0.0.1",
+        "http://0.0.0.0:5173",
+        "http://0.0.0.0:3000",
+        "http://0.0.0.0:8000",
     ],
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:[0-9]+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=600,
 )
 
 app.include_router(system_router)
@@ -58,3 +65,5 @@ app.include_router(news_router)
 app.include_router(trading_router)
 app.include_router(supervisor_router)
 app.include_router(analytics_router)
+app.include_router(telegram_router)
+app.include_router(whatsapp_router)

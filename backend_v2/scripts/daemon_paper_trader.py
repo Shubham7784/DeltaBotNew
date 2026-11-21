@@ -30,6 +30,8 @@ from app.ml.registry import ModelRegistry
 from app.models import Candle, PaperAccount, PaperPosition
 from app.trading.paper_executor import PaperExecutionEngine
 from app.trading.position_monitor import PositionMonitorService
+from app.notifications.telegram_service import telegram_service
+from app.notifications.whatsapp_service import whatsapp_service
 from app.trading.risk_engine import RiskEngine
 from app.workers.workflow import AssetWorkflowCoordinator
 
@@ -232,6 +234,66 @@ class ContinuousPaperTrader:
                                     )
                                 else:
                                     logger.warning("Risk Engine REJECTED trade proposal: %s", risk_decision.reason)
+                            elif decision in ("REJECT", "WAIT"):
+                                # Check if specialist workers detect trade opportunity but safety gates block it
+                                tech_payload = mon_res.get("technical_payload", {})
+                                ml_payload = mon_res.get("ml_payload", {})
+                                val_payload = mon_res.get("validator_payload", {})
+                                tech_setup = tech_payload.get("setup_detected", False)
+                                tech_dir = tech_payload.get("direction", "NEUTRAL")
+                                ml_dec = ml_payload.get("decision", "NO_TRADE")
+                                ml_conf = float(ml_payload.get("confidence") or 0.0)
+
+                                wants_trade = tech_setup or (ml_dec in ("LONG", "SHORT") and ml_conf >= 0.45)
+                                if wants_trade:
+                                    cand_dir = tech_dir if tech_dir in ("LONG", "SHORT") else ml_dec
+                                    curr_price = float(current_prices.get(asset, 0.0))
+                                    if curr_price > 0 and cand_dir in ("LONG", "SHORT"):
+                                        ref_stop = float(tech_payload.get("stop_reference_price") or (curr_price * (0.985 if cand_dir == "LONG" else 1.015)))
+                                        ref_tp = float(tech_payload.get("target_reference_price") or (curr_price * (1.025 if cand_dir == "LONG" else 0.975)))
+
+                                        rej_reasons = val_payload.get("rejection_reasons", [])
+                                        wait_reasons = val_payload.get("wait_reasons", [])
+                                        if not rej_reasons and not wait_reasons:
+                                            rej_reasons = [mon_res.get("rationale", "Gating blocked trade proposal")]
+
+                                        worker_summary = {
+                                            "regime": mon_res.get("regime", "N/A"),
+                                            "session_bias": mon_res.get("session_bias", "NO_TRADE"),
+                                            "technical_summary": f"{tech_payload.get('setup_type', 'NONE')} (Dir: {tech_dir}, RSI: {tech_payload.get('indicators', {}).get('rsi_15m', 'N/A')})",
+                                            "ml_summary": f"{ml_dec} (Conf: {ml_conf*100:.1f}%)",
+                                            "order_flow_summary": f"{mon_res.get('order_flow_bias', 'NEUTRAL')} bias",
+                                        }
+
+                                        try:
+                                            await telegram_service.send_blocked_trade_alert(
+                                                asset=asset,
+                                                direction=cand_dir,
+                                                entry_price=curr_price,
+                                                stop_loss=ref_stop,
+                                                take_profit=ref_tp,
+                                                setup_type=tech_payload.get("setup_type", "MOMENTUM_SIGNAL"),
+                                                rejection_reasons=rej_reasons,
+                                                wait_reasons=wait_reasons,
+                                                worker_summary=worker_summary,
+                                            )
+                                        except Exception as te:
+                                            logger.error("Failed to send Telegram blocked trade alert: %s", te)
+
+                                        try:
+                                            await whatsapp_service.send_blocked_trade_alert(
+                                                asset=asset,
+                                                direction=cand_dir,
+                                                entry_price=curr_price,
+                                                stop_loss=ref_stop,
+                                                take_profit=ref_tp,
+                                                setup_type=tech_payload.get("setup_type", "MOMENTUM_SIGNAL"),
+                                                rejection_reasons=rej_reasons,
+                                                wait_reasons=wait_reasons,
+                                                worker_summary=worker_summary,
+                                            )
+                                        except Exception as we:
+                                            logger.error("Failed to send WhatsApp blocked trade alert: %s", we)
                         except Exception as e:
                             logger.error("Monitoring cycle failed for %s: %s", asset, e, exc_info=True)
 
@@ -255,11 +317,25 @@ class ContinuousPaperTrader:
                     logger.info("Reached maximum requested cycles (%d). Stopping daemon.", self.max_cycles)
                     break
 
-                # Sleep until next cycle or stop signal
-                try:
-                    await asyncio.wait_for(self.stop_event.wait(), timeout=self.interval_seconds)
-                except TimeoutError:
-                    pass
+                # Responsive polling loop: process Telegram operator overrides every 3s between cycles
+                async def _get_acc_session():
+                    s = AsyncSession(engine, expire_on_commit=False)
+                    a = await get_or_create_paper_account(s, self.account_name, self.initial_balance)
+                    return s, a
+
+                elapsed = 0
+                step_interval = 3
+                while elapsed < self.interval_seconds and not self.stop_event.is_set():
+                    try:
+                        await telegram_service.poll_updates_once(_get_acc_session, risk_engine, executor)
+                    except Exception as pe:
+                        logger.debug("Telegram poll error: %s", pe)
+
+                    try:
+                        await asyncio.wait_for(self.stop_event.wait(), timeout=step_interval)
+                        break
+                    except TimeoutError:
+                        elapsed += step_interval
 
         finally:
             logger.info("Shutting down Continuous Paper Trader Daemon. Cleaning up database connections...")

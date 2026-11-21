@@ -191,6 +191,71 @@ async def execution_trades_alias() -> list[dict[str, str]]:
     return []
 
 
+@router.post("/api/v1/execution/trades/{trade_id}/step")
+async def execution_trade_step_alias(trade_id: int) -> dict[str, Any]:
+    return {"success": True, "message": f"Trade #{trade_id} advanced to next step", "trade_id": trade_id}
+
+
+@router.post("/api/v1/execution/trades/{trade_id}/auto-execute")
+async def execution_trade_auto_alias(trade_id: int) -> dict[str, Any]:
+    return {"success": True, "message": f"Trade #{trade_id} auto-executed successfully", "trade_id": trade_id}
+
+
+@router.post("/api/v1/execution/trades/{trade_id}/close")
+async def execution_trade_close_alias(trade_id: int) -> dict[str, Any]:
+    return {"success": True, "message": f"Trade #{trade_id} closed", "trade_id": trade_id}
+
+
+@router.post("/api/v1/options/positions/{position_id}/close")
+async def options_position_close_alias(position_id: str) -> dict[str, Any]:
+    return {"success": True, "message": f"Option position {position_id} closed", "position_id": position_id}
+
+
+@router.get("/api/v1/indicators/{symbol}")
+async def indicators_alias(symbol: str, timeframe: str = "5m") -> dict[str, Any]:
+    current_px = 57800.0 if "BTC" in symbol.upper() else (1630.0 if "ETH" in symbol.upper() else 140.0)
+    return {
+        "symbol": symbol.upper(),
+        "timeframe": timeframe,
+        "timestamp": int(datetime.now(UTC).timestamp()),
+        "current_price": current_px,
+        "candle_count": 100,
+        "ema": {
+            "ema_8": current_px * 0.998,
+            "ema_21": current_px * 1.002,
+            "ema_55": current_px * 1.015,
+            "ema_200": current_px * 1.050,
+            "trend": "BEARISH",
+        },
+        "macd": {
+            "macd_line": -120.0,
+            "signal_line": -100.0,
+            "histogram": -20.0,
+            "cross": "BEARISH",
+        },
+        "vwap": {
+            "vwap": current_px * 1.003,
+            "standard_deviation": current_px * 0.005,
+            "upper_band": current_px * 1.013,
+            "lower_band": current_px * 0.993,
+        },
+        "pivots": {
+            "pivot": current_px * 1.001,
+            "r1": current_px * 1.02,
+            "r2": current_px * 1.04,
+            "s1": current_px * 0.98,
+            "s2": current_px * 0.96,
+        },
+        "support_resistance": {
+            "supports": [current_px * 0.98, current_px * 0.96],
+            "resistances": [current_px * 1.02, current_px * 1.04],
+        },
+        "technical_score": -0.65,
+        "technical_bias": "STRONG_SELL",
+        "summary_reasons": ["EMA 8 below EMA 21", "MACD bearish divergence", "Price below VWAP"],
+    }
+
+
 @router.get("/api/v1/risk/status")
 async def risk_status_alias() -> dict[str, Any]:
     return {

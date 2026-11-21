@@ -274,8 +274,43 @@ def classify_hourly_regime(
             f"{derivative_values.open_interest_change_hours:.2f}h window."
         )
 
-    if realized_volatility >= HIGH_VOLATILITY_THRESHOLD_PERCENT:
-        regime: RegimeLabel = "high_volatility"
+    # Differentiate strong directional trend momentum from non-directional erratic volatility
+    is_trend_up = (
+        ema_spread >= TREND_SPREAD_THRESHOLD_PERCENT
+        and consistency >= TREND_CONSISTENCY_THRESHOLD
+    ) or (
+        ema_spread >= 1.0 and return_24h >= 2.5 and consistency >= 0.50
+    )
+
+    is_trend_down = (
+        ema_spread <= -TREND_SPREAD_THRESHOLD_PERCENT
+        and consistency >= TREND_CONSISTENCY_THRESHOLD
+    ) or (
+        ema_spread <= -1.0 and return_24h <= -2.5 and consistency >= 0.50
+    )
+
+    if is_trend_up:
+        regime: RegimeLabel = "trend_up"
+        confidence = (
+            0.5 + 0.5 * min(abs(ema_spread) / 0.5, 1.0)
+        ) * consistency
+        invalidation = [
+            "Reassess if EMA20 crosses below EMA50.",
+            f"Reassess if 12h directional consistency falls below {TREND_CONSISTENCY_THRESHOLD:.2f}.",
+            f"Reclassify as high volatility if 24h realized volatility reaches {HIGH_VOLATILITY_THRESHOLD_PERCENT:.2f}%.",
+        ]
+    elif is_trend_down:
+        regime: RegimeLabel = "trend_down"
+        confidence = (
+            0.5 + 0.5 * min(abs(ema_spread) / 0.5, 1.0)
+        ) * consistency
+        invalidation = [
+            "Reassess if EMA20 crosses above EMA50.",
+            f"Reassess if 12h directional consistency falls below {TREND_CONSISTENCY_THRESHOLD:.2f}.",
+            f"Reclassify as high volatility if 24h realized volatility reaches {HIGH_VOLATILITY_THRESHOLD_PERCENT:.2f}%.",
+        ]
+    elif realized_volatility >= HIGH_VOLATILITY_THRESHOLD_PERCENT:
+        regime = "high_volatility"
         confidence = min(
             1.0,
             0.5
@@ -285,32 +320,6 @@ def classify_hourly_regime(
         invalidation = [
             f"Reassess when 24h realized volatility falls below {HIGH_VOLATILITY_THRESHOLD_PERCENT:.2f}%.",
             "Invalidate this snapshot if completed hourly candles become stale or discontinuous.",
-        ]
-    elif (
-        ema_spread >= TREND_SPREAD_THRESHOLD_PERCENT
-        and consistency >= TREND_CONSISTENCY_THRESHOLD
-    ):
-        regime = "trend_up"
-        confidence = (
-            0.5 + 0.5 * min(abs(ema_spread) / 0.5, 1.0)
-        ) * consistency
-        invalidation = [
-            "Reassess if EMA20 crosses below EMA50.",
-            f"Reassess if 12h directional consistency falls below {TREND_CONSISTENCY_THRESHOLD:.2f}.",
-            f"Reclassify as high volatility if 24h realized volatility reaches {HIGH_VOLATILITY_THRESHOLD_PERCENT:.2f}%.",
-        ]
-    elif (
-        ema_spread <= -TREND_SPREAD_THRESHOLD_PERCENT
-        and consistency >= TREND_CONSISTENCY_THRESHOLD
-    ):
-        regime = "trend_down"
-        confidence = (
-            0.5 + 0.5 * min(abs(ema_spread) / 0.5, 1.0)
-        ) * consistency
-        invalidation = [
-            "Reassess if EMA20 crosses above EMA50.",
-            f"Reassess if 12h directional consistency falls below {TREND_CONSISTENCY_THRESHOLD:.2f}.",
-            f"Reclassify as high volatility if 24h realized volatility reaches {HIGH_VOLATILITY_THRESHOLD_PERCENT:.2f}%.",
         ]
     else:
         regime = "range"

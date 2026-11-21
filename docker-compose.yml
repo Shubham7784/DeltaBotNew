@@ -36,6 +36,8 @@ services:
       REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend_v2/model-registry:/app/model-registry
     healthcheck:
       test:
         [
@@ -131,6 +133,23 @@ services:
       api:
         condition: service_healthy
 
+  whatsapp:
+    build:
+      context: ./whatsapp-bridge
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: "3001"
+      API_BACKEND_URL: "http://api:8000"
+    volumes:
+      - whatsapp_auth:/app/auth_info_baileys
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   news_model_cache:
+  whatsapp_auth:

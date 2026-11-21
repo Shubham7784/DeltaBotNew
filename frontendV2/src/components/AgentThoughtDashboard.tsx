@@ -27,7 +27,31 @@ import {
   BarChart2,
   AlertTriangle,
   Lock,
+  Smartphone,
 } from 'lucide-react';
+
+interface TradeProposal {
+  proposal_id?: string;
+  id?: string;
+  asset: string;
+  direction: string;
+  side?: string;
+  entry_price: number;
+  stop_loss: number;
+  take_profit: number;
+  setup_type?: string;
+  rejection_reasons?: string[];
+  wait_reasons?: string[];
+  worker_summary?: {
+    technical_summary?: string;
+    ml_summary?: string;
+    order_flow_summary?: string;
+    regime?: string;
+    session_bias?: string;
+  };
+  status: 'PENDING' | 'EXECUTED' | 'REJECTED';
+  created_at: string;
+}
 
 export const AgentThoughtDashboard: React.FC = () => {
   // Data States
@@ -38,6 +62,7 @@ export const AgentThoughtDashboard: React.FC = () => {
   const [traces, setTraces] = useState<DecisionTraceData[]>([]);
   const [performance, setPerformance] = useState<AnalyticsPerformanceData | null>(null);
   const [drift, setDrift] = useState<WorkerDriftData | null>(null);
+  const [proposals, setProposals] = useState<TradeProposal[]>([]);
 
   // UI States
   const [activeTab, setActiveTab] = useState<'positions' | 'thoughts' | 'traces'>('thoughts');
@@ -46,6 +71,7 @@ export const AgentThoughtDashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isTriggeringCycle, setIsTriggeringCycle] = useState<boolean>(false);
   const [triggerFeedback, setTriggerFeedback] = useState<string | null>(null);
+  const [overrideFeedback, setOverrideFeedback] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
 
   // Fetch all live data from DeltaBot 2.0 REST endpoints
@@ -59,6 +85,7 @@ export const AgentThoughtDashboard: React.FC = () => {
         tracesRes,
         perfRes,
         driftRes,
+        propRes,
       ] = await Promise.allSettled([
         apiFetch('/api/v1/trading/account'),
         apiFetch('/api/v1/trading/positions'),
@@ -67,6 +94,7 @@ export const AgentThoughtDashboard: React.FC = () => {
         apiFetch('/api/v1/supervisor/traces?limit=25'),
         apiFetch('/api/v1/analytics/performance'),
         apiFetch('/api/v1/analytics/worker-drift'),
+        apiFetch('/api/v1/telegram/proposals'),
       ]);
 
       if (accRes.status === 'fulfilled' && accRes.value.ok) {
@@ -94,6 +122,9 @@ export const AgentThoughtDashboard: React.FC = () => {
       if (driftRes.status === 'fulfilled' && driftRes.value.ok) {
         setDrift(await driftRes.value.json());
       }
+      if (propRes && propRes.status === 'fulfilled' && propRes.value.ok) {
+        setProposals(await propRes.value.json());
+      }
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
     } finally {
@@ -107,6 +138,27 @@ export const AgentThoughtDashboard: React.FC = () => {
     const interval = setInterval(fetchAllData, 4000);
     return () => clearInterval(interval);
   }, [fetchAllData, autoRefresh]);
+
+  // Handle Operator HITL Override via API/Telegram bridge
+  const handleOverrideProposal = async (proposalId: string, action: 'approve' | 'reject') => {
+    setOverrideFeedback(null);
+    try {
+      const res = await apiFetch('/api/v1/telegram/override', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposal_id: proposalId, action }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setOverrideFeedback(`Operator action: ${data.message}`);
+        await fetchAllData();
+      } else {
+        setOverrideFeedback(`Action failed: ${data.detail || res.statusText}`);
+      }
+    } catch (err) {
+      setOverrideFeedback(`Override error: ${String(err)}`);
+    }
+  };
 
   // Trigger manual on-demand cycle
   const handleTriggerCycle = async (asset: 'BTC' | 'ETH') => {
@@ -222,6 +274,16 @@ export const AgentThoughtDashboard: React.FC = () => {
               <Play className="w-3.5 h-3.5 fill-current" />
               <span>Step ETH</span>
             </button>
+            <a
+              href="http://localhost:3001/qr"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-950/50 hover:bg-emerald-900/70 text-emerald-300 text-xs font-semibold transition-colors border border-emerald-500/40 shadow-sm"
+              title="Scan QR to Link WhatsApp Bot for trade alerts & 1-tap overrides"
+            >
+              <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+              <span>WhatsApp Bot</span>
+            </a>
             <button
               onClick={() => fetchAllData()}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors border border-slate-700"
@@ -289,6 +351,88 @@ export const AgentThoughtDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* HITL Operator Override Queue: Alert cards when workers want to trade but safety gates intervened */}
+      {proposals.filter((p) => p.status === 'PENDING').length > 0 && (
+        <div className="space-y-3">
+          {proposals
+            .filter((p) => p.status === 'PENDING')
+            .map((p) => (
+              <div
+                key={p.proposal_id || p.id}
+                className="bg-amber-950/40 border border-amber-500/50 rounded-2xl p-5 shadow-2xl animate-pulse-subtle"
+              >
+                <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 pb-3 border-b border-amber-500/30">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                      <Zap className="w-6 h-6 animate-bounce" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 uppercase">
+                          Safety Gate Intervention
+                        </span>
+                        <h2 className="text-base font-bold text-slate-100">
+                          {p.asset}USD — High-Conviction {p.direction} Signal Blocked
+                        </h2>
+                      </div>
+                      <p className="text-xs text-amber-200/80 mt-0.5">
+                        Specialist workers detect candidate opportunity. Dispatched to Telegram bot for operator authorization.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => handleOverrideProposal(p.proposal_id || p.id || '', 'approve')}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg transition-transform active:scale-95"
+                    >
+                      <Play className="w-4 h-4 fill-current" />
+                      <span>Place / Override Trade</span>
+                    </button>
+                    <button
+                      onClick={() => handleOverrideProposal(p.proposal_id || p.id || '', 'reject')}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800 hover:bg-rose-900/60 text-slate-300 hover:text-rose-200 border border-slate-700 text-xs font-semibold transition-colors"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      <span>Reject Proposal</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                  <div className="bg-slate-900/80 border border-slate-800 p-3 rounded-lg font-mono">
+                    <span className="text-slate-400 block text-[10px]">Reference Entry:</span>
+                    <span className="text-sm font-bold text-slate-100">${p.entry_price?.toLocaleString()}</span>
+                  </div>
+                  <div className="bg-slate-900/80 border border-slate-800 p-3 rounded-lg font-mono">
+                    <span className="text-slate-400 block text-[10px]">Reference Stop Loss:</span>
+                    <span className="text-sm font-bold text-rose-400">${p.stop_loss?.toLocaleString()}</span>
+                  </div>
+                  <div className="bg-slate-900/80 border border-slate-800 p-3 rounded-lg font-mono">
+                    <span className="text-slate-400 block text-[10px]">Worker Consensus:</span>
+                    <span className="text-slate-200 block truncate">{p.worker_summary?.technical_summary || p.setup_type}</span>
+                    <span className="text-[10px] text-indigo-300 block">{p.worker_summary?.ml_summary}</span>
+                  </div>
+                  <div className="bg-slate-900/80 border border-amber-500/20 p-3 rounded-lg">
+                    <span className="text-amber-400 font-semibold block text-[10px]">Why Blocked:</span>
+                    <div className="text-[11px] text-amber-200/90 space-y-0.5 mt-0.5 line-clamp-2">
+                      {(p.rejection_reasons || []).concat(p.wait_reasons || []).map((r: string, idx: number) => (
+                        <span key={idx} className="block">• {r}</span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {overrideFeedback && (
+                  <div className="mt-3 text-xs font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-800/60 p-2 rounded-lg">
+                    {overrideFeedback}
+                  </div>
+                )}
+              </div>
+            ))}
+        </div>
+      )}
 
       {/* Navigation Tabs */}
       <div className="flex border-b border-slate-800 gap-2">
